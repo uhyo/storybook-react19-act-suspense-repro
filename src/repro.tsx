@@ -1,11 +1,25 @@
-import React, { Suspense, useState } from 'react';
+import { Suspense, use, useState } from 'react';
 
-const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-const load = () => wait(30).then(() => 'loaded');
+// A promise that resolves after 30 ms
+const load = () => new Promise<string>(resolve => setTimeout(() => resolve('loaded'), 30));
 
-/** Rendered inside <Suspense>. Each variant only differs in how `read` suspends. */
-export const Content = ({ read }: { read: () => string }) => {
-  const value = read();
+/** Clicking the button creates a promise and mounts a component that suspends with `use(promise)`. */
+export const Repro = () => {
+  const [promise, setPromise] = useState<Promise<string> | null>(null);
+  return (
+    <>
+      <button onClick={() => setPromise(load())}>open</button>
+      {promise && (
+        <Suspense fallback={null}>
+          <Dialog promise={promise} />
+        </Suspense>
+      )}
+    </>
+  );
+};
+
+const Dialog = ({ promise }: { promise: Promise<string> }) => {
+  const value = use(promise);
   return (
     <div role="dialog" aria-label="repro-dialog">
       {value}
@@ -13,41 +27,33 @@ export const Content = ({ read }: { read: () => string }) => {
   );
 };
 
-/** Clicking the button creates a promise and mounts <Content> under <Suspense>. */
-export const Repro = ({ makeRead }: { makeRead: (p: Promise<string>) => () => string }) => {
+/** For comparison: suspends by throwing the promise instead of calling `use()` (React 18 style). */
+export const ReproThrowPromise = () => {
   const [read, setRead] = useState<(() => string) | null>(null);
+  const open = () => {
+    let value: string | undefined;
+    const promise = load().then(v => {
+      value = v;
+    });
+    setRead(() => () => {
+      if (value === undefined) throw promise;
+      return value;
+    });
+  };
   return (
     <>
-      <button onClick={() => setRead(() => makeRead(load()))}>open</button>
-      {read !== null && (
+      <button onClick={open}>open</button>
+      {read && (
         <Suspense fallback={null}>
-          <Content read={read} />
+          <ThrowDialog read={read} />
         </Suspense>
       )}
     </>
   );
 };
 
-/** `React.use(promise)` */
-export const useDirect = (p: Promise<string>) => () => React.use(p);
-
-/** The promise is kept in an object and read with `use(entry.promise)`. */
-export const useEntry = (p: Promise<string>) => {
-  const entry = { promise: p };
-  return () => React.use(entry.promise);
-};
-
-/** Suspends by throwing the promise instead of calling `use()` (React 18 style). */
-export const throwPromise = (p: Promise<string>) => {
-  let state: { status: 'pending' } | { status: 'done'; value: string } = { status: 'pending' };
-  void p.then(value => {
-    state = { status: 'done', value };
-  });
-  return () => {
-    if (state.status === 'pending') {
-      throw p;
-    }
-    return state.value;
-  };
-};
-
+const ThrowDialog = ({ read }: { read: () => string }) => (
+  <div role="dialog" aria-label="repro-dialog">
+    {read()}
+  </div>
+);

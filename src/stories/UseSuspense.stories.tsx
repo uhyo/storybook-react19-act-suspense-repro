@@ -1,6 +1,7 @@
-import { configure, expect, getConfig, userEvent, within } from 'storybook/test';
+import { act } from 'react';
+import { configure, expect, getConfig, screen, userEvent } from 'storybook/test';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { Repro, throwPromise, useDirect, useEntry } from '../repro';
+import { Repro, ReproThrowPromise } from '../repro';
 
 const meta = {
   title: 'repro/UseSuspense',
@@ -10,67 +11,62 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-const findDialog = (canvasElement: HTMLElement) =>
-  within(canvasElement.ownerDocument.body).findByRole('dialog', { name: 'repro-dialog' });
+// ---------------------------------------------------------------------------
+// Reproduction: fails
+// ---------------------------------------------------------------------------
 
-/** EXPECTED TO FAIL: the Suspense boundary stays on its fallback and the dialog is never found. */
-export const UseUserEventClick: Story = {
-  args: { makeRead: useDirect },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'open' }));
-    await expect(await findDialog(canvasElement)).toBeVisible();
+/** FAILS: the Suspense boundary stays on its fallback and the dialog never appears. */
+export const UserEventClick: Story = {
+  play: async () => {
+    await userEvent.click(await screen.findByRole('button', { name: 'open' }));
+    await expect(await screen.findByRole('dialog', { name: 'repro-dialog' })).toBeVisible();
   },
 };
 
-/** EXPECTED TO FAIL: same as above, with the promise read via `use(entry.promise)`. */
-export const UseEntryUserEventClick: Story = {
-  args: { makeRead: useEntry },
-  play: UseUserEventClick.play,
-};
+// ---------------------------------------------------------------------------
+// Comparison: passes
+// ---------------------------------------------------------------------------
 
-/** Passes: a raw DOM click does not go through testing-library's `eventWrapper`. */
-export const UseRawClick: Story = {
-  args: { makeRead: useDirect },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    (await canvas.findByRole('button', { name: 'open' })).click();
-    await expect(await findDialog(canvasElement)).toBeVisible();
+/** PASSES: a raw DOM click (not through testing-library's `eventWrapper`). */
+export const RawClick: Story = {
+  play: async () => {
+    (await screen.findByRole('button', { name: 'open' })).click();
+    await expect(await screen.findByRole('dialog', { name: 'repro-dialog' })).toBeVisible();
   },
 };
 
-type EventWrapper = ReturnType<typeof getConfig>['eventWrapper'];
-
-/**
- * Runs `fn` with testing-library's `eventWrapper` temporarily replaced.
- * `configure()` is global and the stories share one page, so the original wrapper
- * is restored afterwards to keep the other stories unaffected.
- */
-const withEventWrapper = async (eventWrapper: EventWrapper, fn: () => Promise<void>) => {
-  const original = getConfig().eventWrapper;
-  configure({ eventWrapper });
-  try {
-    await fn();
-  } finally {
-    configure({ eventWrapper: original });
-  }
+/** PASSES: `userEvent.click` with `eventWrapper` replaced by a pass-through (no `act()`). */
+export const PassThroughEventWrapper: Story = {
+  play: async () => {
+    const original = getConfig().eventWrapper;
+    configure({ eventWrapper: cb => cb() });
+    try {
+      await userEvent.click(await screen.findByRole('button', { name: 'open' }));
+      await expect(await screen.findByRole('dialog', { name: 'repro-dialog' })).toBeVisible();
+    } finally {
+      // configure() is global, so restore the original to keep other stories unaffected
+      configure({ eventWrapper: original });
+    }
+  },
 };
 
-const clickOpenAndExpectDialog = async (canvasElement: HTMLElement) => {
-  const canvas = within(canvasElement);
-  await userEvent.click(await canvas.findByRole('button', { name: 'open' }));
-  await expect(await findDialog(canvasElement)).toBeVisible();
+/** PASSES: suspending by throwing a promise instead of calling `use()`. */
+export const ThrowPromise: Story = {
+  render: () => <ReproThrowPromise />,
+  play: UserEventClick.play,
 };
 
-/** Passes: `eventWrapper` is replaced with a pass-through, so no `act()` wraps the click. */
-export const UsePassThroughEventWrapper: Story = {
-  args: { makeRead: useDirect },
-  play: ({ canvasElement }) =>
-    withEventWrapper(cb => cb(), () => clickOpenAndExpectDialog(canvasElement)),
-};
+// ---------------------------------------------------------------------------
+// Workaround: passes
+// ---------------------------------------------------------------------------
 
-/** Passes: suspending by throwing the promise works even through `eventWrapper`. */
-export const ThrowPromiseUserEventClick: Story = {
-  args: { makeRead: throwPromise },
-  play: UseUserEventClick.play,
+/** PASSES: `userEvent.click` wrapped in an awaited `act()` (Storybook's default `eventWrapper` kept). */
+export const AwaitedAct: Story = {
+  play: async () => {
+    const button = await screen.findByRole('button', { name: 'open' });
+    await act(async () => {
+      await userEvent.click(button);
+    });
+    await expect(await screen.findByRole('dialog', { name: 'repro-dialog' })).toBeVisible();
+  },
 };

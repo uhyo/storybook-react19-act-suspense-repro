@@ -39,26 +39,22 @@ npm run storybook                 # or open the stories in the Storybook UI
 
 ## Stories
 
-The component and the three ways of suspending are in `src/repro.tsx`. The reproduction stories are in `src/stories/UseSuspense.stories.tsx`. The component is a button that, when clicked, mounts a component under `<Suspense fallback={null}>`. That component suspends for 30 ms and then renders `role="dialog"`. Each `play` function clicks the button and waits for the dialog.
+Everything is in two files:
+
+- `src/repro.tsx`: the component. It is a button that, when clicked, mounts a component under `<Suspense fallback={null}>`. That component suspends with `use(promise)` for 30 ms and then renders `role="dialog"`.
+- `src/stories/UseSuspense.stories.tsx`: the stories. Each `play` function clicks the button and waits for the dialog.
 
 | Story | What it does | Result with `npm run test:repeat` (30 runs) |
 |---|---|---|
-| `UseUserEventClick` | `use(promise)` + `userEvent.click` | **0 / 30 pass** |
-| `UseEntryUserEventClick` | `use(entry.promise)` + `userEvent.click` | **0 / 30 pass** |
-| `UseRawClick` | `use(promise)` + raw DOM `button.click()` | 30 / 30 pass |
-| `UsePassThroughEventWrapper` | `use(promise)` + `userEvent.click` after `configure({ eventWrapper: cb => cb() })` | 30 / 30 pass |
-| `ThrowPromiseUserEventClick` | `throw promise` instead of `use()` + `userEvent.click` | 30 / 30 pass |
+| `UserEventClick` | `userEvent.click` | **0 / 30 pass** (the reproduction) |
+| `RawClick` | raw DOM `button.click()` | 30 / 30 pass |
+| `PassThroughEventWrapper` | `userEvent.click` after `configure({ eventWrapper: cb => cb() })` | 30 / 30 pass |
+| `ThrowPromise` | `userEvent.click`, but the component throws the promise instead of calling `use()` | 30 / 30 pass |
+| `AwaitedAct` (workaround) | `userEvent.click` wrapped in `await act(async () => { ... })` | 30 / 30 pass, and the `act` warning is gone |
 
-The first two failing stories are the reproduction. They fail with `Unable to find role="dialog" and name "repro-dialog"`.
+`UserEventClick` fails with `Unable to find role="dialog" and name "repro-dialog"`.
 
-Workarounds that await `act()` (`src/stories/UseSuspenseAwaitedAct.stories.tsx`):
-
-| Story | What it does | Result (30 runs) |
-|---|---|---|
-| `AwaitedActAroundClick` | `eventWrapper` set to a pass-through, and the whole `userEvent.click` wrapped in `await React.act(async () => { ... })` | 30 / 30 pass |
-| `AwaitedActAroundClickDefaultWrapper` | Storybook's own synchronous `eventWrapper` kept, and the `userEvent.click` wrapped in `await React.act(async () => { ... })` | 30 / 30 pass, and the `act` warning is gone |
-
-Note that `eventWrapper` itself cannot be made to await: testing-library and user-event call it synchronously and use its return value directly. Starting an async `act()` inside it and discarding the promise opens overlapping `act()` scopes (`You seem to have overlapping act() calls`) and breaks the stories that run afterwards on the same page (in one full run it also made the test run hang), so that variant is not included.
+Note that `eventWrapper` itself cannot be made to await: testing-library and user-event call it synchronously and use its return value directly. Starting an async `act()` inside it and discarding the promise opens overlapping `act()` scopes (`You seem to have overlapping act() calls`) and breaks the stories that run afterwards on the same page.
 
 ## Suspected cause
 
