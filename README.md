@@ -17,11 +17,11 @@ During a failing run, React logs `A component suspended inside an act scope, but
 | Package | Version |
 |---|---|
 | react / react-dom | 19.3.1 |
-| storybook / @storybook/react-vite / @storybook/addon-vitest | 10.6.2 |
+| storybook / @storybook/react-vite / @storybook/addon-vitest | 10.6.6 |
 | vitest / @vitest/browser / @vitest/browser-playwright | 5.1.0 |
-| @testing-library/dom | 10.4.1 |
-| @testing-library/user-event | 14.6.1 |
-| vite | 8.1.5 |
+| @testing-library/dom | 10.4.2 |
+| @testing-library/user-event | 14.6.8 |
+| vite | 8.3.6 |
 | Node | 24 |
 
 All versions are pinned exactly in `package.json`.
@@ -70,4 +70,4 @@ This has not been confirmed. It is also unclear whether it should be fixed in St
 ## Not tested
 
 - `fireEvent` and other testing-library event helpers.
-- React versions other than 19.3.1, and Storybook versions other than 10.6.2.
+- React versions other than 19.3.1, and Storybook versions other than 10.6.6.
