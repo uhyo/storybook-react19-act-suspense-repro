@@ -1,57 +1,6 @@
-import React, { Suspense, useState } from 'react';
-import { configure, expect, userEvent, within } from 'storybook/test';
+import { configure, expect, getConfig, userEvent, within } from 'storybook/test';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-
-const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-const load = () => wait(30).then(() => 'loaded');
-
-/** Rendered inside <Suspense>. Each variant only differs in how `read` suspends. */
-const Content = ({ read }: { read: () => string }) => {
-  const value = read();
-  return (
-    <div role="dialog" aria-label="repro-dialog">
-      {value}
-    </div>
-  );
-};
-
-/** Clicking the button creates a promise and mounts <Content> under <Suspense>. */
-const Repro = ({ makeRead }: { makeRead: (p: Promise<string>) => () => string }) => {
-  const [read, setRead] = useState<(() => string) | null>(null);
-  return (
-    <>
-      <button onClick={() => setRead(() => makeRead(load()))}>open</button>
-      {read !== null && (
-        <Suspense fallback={null}>
-          <Content read={read} />
-        </Suspense>
-      )}
-    </>
-  );
-};
-
-/** `React.use(promise)` */
-const useDirect = (p: Promise<string>) => () => React.use(p);
-
-/** The promise is kept in an object and read with `use(entry.promise)`. */
-const useEntry = (p: Promise<string>) => {
-  const entry = { promise: p };
-  return () => React.use(entry.promise);
-};
-
-/** Suspends by throwing the promise instead of calling `use()` (React 18 style). */
-const throwPromise = (p: Promise<string>) => {
-  let state: { status: 'pending' } | { status: 'done'; value: string } = { status: 'pending' };
-  void p.then(value => {
-    state = { status: 'done', value };
-  });
-  return () => {
-    if (state.status === 'pending') {
-      throw p;
-    }
-    return state.value;
-  };
-};
+import { Repro, throwPromise, useDirect, useEntry } from '../repro';
 
 const meta = {
   title: 'repro/UseSuspense',
@@ -90,15 +39,34 @@ export const UseRawClick: Story = {
   },
 };
 
+type EventWrapper = ReturnType<typeof getConfig>['eventWrapper'];
+
+/**
+ * Runs `fn` with testing-library's `eventWrapper` temporarily replaced.
+ * `configure()` is global and the stories share one page, so the original wrapper
+ * is restored afterwards to keep the other stories unaffected.
+ */
+const withEventWrapper = async (eventWrapper: EventWrapper, fn: () => Promise<void>) => {
+  const original = getConfig().eventWrapper;
+  configure({ eventWrapper });
+  try {
+    await fn();
+  } finally {
+    configure({ eventWrapper: original });
+  }
+};
+
+const clickOpenAndExpectDialog = async (canvasElement: HTMLElement) => {
+  const canvas = within(canvasElement);
+  await userEvent.click(await canvas.findByRole('button', { name: 'open' }));
+  await expect(await findDialog(canvasElement)).toBeVisible();
+};
+
 /** Passes: `eventWrapper` is replaced with a pass-through, so no `act()` wraps the click. */
 export const UsePassThroughEventWrapper: Story = {
   args: { makeRead: useDirect },
-  play: async ({ canvasElement }) => {
-    configure({ eventWrapper: cb => cb() });
-    const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole('button', { name: 'open' }));
-    await expect(await findDialog(canvasElement)).toBeVisible();
-  },
+  play: ({ canvasElement }) =>
+    withEventWrapper(cb => cb(), () => clickOpenAndExpectDialog(canvasElement)),
 };
 
 /** Passes: suspending by throwing the promise works even through `eventWrapper`. */
